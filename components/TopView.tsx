@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Point, ScreenDimensions } from '../types';
 import DimensionLine from './DimensionLine';
 import { useScreenGeometry } from '../hooks/useScreenGeometry';
-
 
 type TopViewProps = {
   dimensions: ScreenDimensions;
@@ -13,8 +12,82 @@ type TopViewProps = {
   isStable: boolean;
 }
 
+// Helper component for SVG marker definition (consistent with SideView)
+const ArrowDefs = () => (
+    <defs>
+        <marker 
+            id="dim-arrow-top" 
+            viewBox="0 -5 10 10"
+            refX="5" 
+            refY="0"
+            markerWidth="6" 
+            markerHeight="6" 
+            orient="auto"
+        >
+            <path d="M0,-5L10,0L0,5" fill="#3b82f6" />
+        </marker>
+    </defs>
+);
+
 const TopView: React.FC<TopViewProps> = ({ dimensions, geometry, sideViewPoints, onDimensionChange, viewScale, isStable }) => {
     const { base, stand, panel, backpack, vesaNeck, pivot } = geometry;
+
+    // State for editing swivel angle
+    const [isEditingSwivel, setIsEditingSwivel] = useState(false);
+    const [swivelValue, setSwivelValue] = useState(dimensions.swivelAngle.toString());
+    const swivelInputRef = useRef<HTMLInputElement>(null);
+
+    // State for dragging swivel label radially
+    const [swivelDragOffset, setSwivelDragOffset] = useState(0);
+    const [isDraggingSwivel, setIsDraggingSwivel] = useState(false);
+    const swivelDragStartRef = useRef({ clientX: 0, clientY: 0, initialOffset: 0 });
+
+    useEffect(() => setSwivelValue(dimensions.swivelAngle.toString()), [dimensions.swivelAngle]);
+    useEffect(() => { if (isEditingSwivel) swivelInputRef.current?.select(); }, [isEditingSwivel]);
+
+    const handleSwivelSubmit = () => {
+        const numericValue = parseFloat(swivelValue);
+        if (!isNaN(numericValue)) onDimensionChange('swivelAngle', numericValue);
+        setIsEditingSwivel(false);
+    };
+
+    const handleSwivelMouseDown = useCallback((e: React.MouseEvent) => {
+        if (isEditingSwivel) return;
+        e.stopPropagation();
+        setIsDraggingSwivel(true);
+        swivelDragStartRef.current = {
+            clientX: e.clientX,
+            clientY: e.clientY,
+            initialOffset: swivelDragOffset,
+        };
+        document.body.style.cursor = 'grabbing';
+    }, [isEditingSwivel, swivelDragOffset]);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (isDraggingSwivel) {
+                const dragStart = swivelDragStartRef.current;
+                // Vertical down is 90 deg. We calculate vector at mid-angle of swivel.
+                const midAngle = (90 + (90 + dimensions.swivelAngle)) / 2 * (Math.PI / 180);
+                const normVec = { x: Math.cos(midAngle), y: Math.sin(midAngle) };
+                const mouseDelta = { x: (e.clientX - dragStart.clientX) / viewScale, y: (e.clientY - dragStart.clientY) / viewScale };
+                const projectedLength = (mouseDelta.x * normVec.x) + (mouseDelta.y * normVec.y);
+                setSwivelDragOffset(dragStart.initialOffset + projectedLength);
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsDraggingSwivel(false);
+            document.body.style.cursor = 'default';
+        };
+
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDraggingSwivel, viewScale, dimensions.swivelAngle]);
 
     const commonProps = {
       stroke: "#1A202C",
@@ -24,17 +97,10 @@ const TopView: React.FC<TopViewProps> = ({ dimensions, geometry, sideViewPoints,
     
     const baseFillColor = isStable ? "#4A5568" : "#7f1d1d";
 
-    // Based on the corrected understanding:
-    // A: -tiltBackwardAngle -> smaller X in SideView -> FORWARD point
-    // B: +tiltForwardAngle -> larger X in SideView -> REARWARD point
-    // We want A (forward) to be at a larger Y value (bottom).
-    // We want B (rearward) to be at a smaller Y value (top).
-    // The projection mapping should be: (X_side - CenterX_side) -> -(Y_top - CenterY_top)
     const standCenterY_TopView = stand.y + stand.height / 2;
     const y_A = standCenterY_TopView - (sideViewPoints.A.x - sideViewPoints.standCenterX);
     const y_B = standCenterY_TopView - (sideViewPoints.B.x - sideViewPoints.standCenterX);
 
-    // New logic: The circle's diameter is the distance between A and B.
     const circleRadius = Math.abs(y_A - y_B) / 2;
     const circleCenterY = (y_A + y_B) / 2;
 
@@ -64,9 +130,94 @@ const TopView: React.FC<TopViewProps> = ({ dimensions, geometry, sideViewPoints,
         </g>
     );
 
+    const renderSwivelDimension = () => {
+        const baseRadius = 180;
+        const dynamicRadius = baseRadius + swivelDragOffset;
+        const finalRadius = Math.max(30, dynamicRadius);
+
+        // Vertical down is 90 deg
+        const startAngleDeg = 90;
+        const endAngleDeg = 90 + dimensions.swivelAngle;
+
+        const startAngleRad = startAngleDeg * Math.PI / 180;
+        const endAngleRad = endAngleDeg * Math.PI / 180;
+
+        const startPoint = {
+            x: pivot.x + finalRadius * Math.cos(startAngleRad),
+            y: pivot.y + finalRadius * Math.sin(startAngleRad)
+        };
+        const endPoint = {
+            x: pivot.x + finalRadius * Math.cos(endAngleRad),
+            y: pivot.y + finalRadius * Math.sin(endAngleRad)
+        };
+
+        const largeArcFlag = Math.abs(dimensions.swivelAngle) > 180 ? '1' : '0';
+        const sweepFlag = dimensions.swivelAngle >= 0 ? '1' : '0';
+        const d = `M ${startPoint.x} ${startPoint.y} A ${finalRadius} ${finalRadius} 0 ${largeArcFlag} ${sweepFlag} ${endPoint.x} ${endPoint.y}`;
+
+        const midAngleRad = (startAngleRad + endAngleRad) / 2;
+        const textRadius = finalRadius + 15;
+        const textX = pivot.x + textRadius * Math.cos(midAngleRad);
+        const textY = pivot.y + textRadius * Math.sin(midAngleRad);
+
+        return (
+            <g>
+                <path 
+                    d={d} 
+                    stroke="#3b82f6" 
+                    strokeWidth="0.8" 
+                    fill="none"
+                    markerStart="url(#dim-arrow-top)"
+                    markerEnd="url(#dim-arrow-top)"
+                />
+                <g 
+                    onMouseDown={handleSwivelMouseDown}
+                    onClick={() => !isEditingSwivel && setIsEditingSwivel(true)}
+                    className="cursor-grab"
+                >
+                    <rect x={textX - 45} y={textY - 12} width={90} height={24} fill="transparent" />
+                    {!isEditingSwivel ? (
+                        <text
+                            x={textX}
+                            y={textY}
+                            fill="#3b82f6"
+                            fontSize="10"
+                            fontWeight="bold"
+                            textAnchor="middle"
+                            alignmentBaseline="middle"
+                            className="select-none"
+                        >
+                            {`Swivel: ${dimensions.swivelAngle}°`}
+                        </text>
+                    ) : (
+                        <foreignObject x={textX - 40} y={textY - 12} width={80} height={24}>
+                            {React.createElement('div', {
+                                xmlns: "http://www.w3.org/1999/xhtml",
+                                className: "w-full h-full flex justify-center items-center"
+                            }, <input
+                                ref={swivelInputRef}
+                                type="number"
+                                value={swivelValue}
+                                onChange={(e) => setSwivelValue(e.target.value)}
+                                onBlur={handleSwivelSubmit}
+                                onClick={(e) => e.stopPropagation()}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSwivelSubmit();
+                                    if (e.key === 'Escape') setIsEditingSwivel(false);
+                                }}
+                                className="w-16 p-1 text-xs bg-white text-gray-800 border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+                            />)}
+                        </foreignObject>
+                    )}
+                </g>
+            </g>
+        );
+    };
+
     return (
     <g>
-        <text x={base.x + base.width/2} y={Math.max(base.y + base.height, panel.y + panel.height) + 40} textAnchor="middle" fill="#333" fontSize="14" fontWeight="bold">Top View</text>
+      <ArrowDefs />
+      <text x={base.x + base.width/2} y={Math.max(base.y + base.height, panel.y + panel.height) + 40} textAnchor="middle" fill="#333" fontSize="14" fontWeight="bold">Top View</text>
       
       {/* Base */}
       <rect {...base} fill={baseFillColor} {...commonProps} />
@@ -79,14 +230,16 @@ const TopView: React.FC<TopViewProps> = ({ dimensions, geometry, sideViewPoints,
       
       {/* Stability visuals: Centerline and swivel guides */}
       <SwivelGuide angle={0} isPrimary={true} />
-      <SwivelGuide angle={45} isPrimary={false} />
-      <SwivelGuide angle={-45} isPrimary={false} />
+      <SwivelGuide angle={dimensions.swivelAngle} isPrimary={false} />
+      <SwivelGuide angle={-dimensions.swivelAngle} isPrimary={false} />
+
+      {/* Swivel Dimension Arc */}
+      {renderSwivelDimension()}
 
       {/* Pivot point */}
       <circle cx={pivot.x} cy={pivot.y} r="3" fill="#00A0A0" />
       
-      {/* Projected A and B points, now correctly oriented */}
-      {/* B is rearward (top), A is forward (bottom) */}
+      {/* Projected A and B points */}
       <circle cx={pivot.x} cy={y_B} r="3" fill="#991B1B" />
       <text x={pivot.x + 8} y={y_B + 5} fill="#991B1B" fontSize="15" fontWeight="bold">B</text>
       <circle cx={pivot.x} cy={y_A} r="3" fill="#991B1B" />

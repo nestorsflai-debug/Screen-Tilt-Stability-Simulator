@@ -1,4 +1,3 @@
-
 import { useMemo } from 'react';
 import { ScreenDimensions, Point, Rect } from '../types';
 
@@ -55,8 +54,6 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       const standRearX = sideViewOrigin.x + sideViewWidth;
       const standFrontX = standRearX - standDepth;
       
-      // standFrontOffset = standFrontX - baseFrontX
-      // baseFrontX = standFrontX - standFrontOffset
       const baseFrontX = standFrontX - standFrontOffset;
       
       const base = { x: baseFrontX, y: floorY - baseHeight, width: baseDepth, height: baseHeight };
@@ -81,8 +78,6 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       const thicknessLine1 = panel.x + totalScreenThickness / 3;
       const thicknessLine2 = panel.x + (2 * totalScreenThickness) / 3;
 
-      // A (Backward Tilt) results in a forward stability point (smaller X)
-      // B (Forward Tilt) results in a rearward stability point (larger X)
       const pointA = calculateIntersection(pivot, -tiltBackwardAngle, floorY);
       const pointB = calculateIntersection(pivot, tiltForwardAngle, floorY);
       
@@ -160,32 +155,24 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
         return { origin: frontViewOrigin, floorY, centerX, base, stand, panel, backpack, vesaNeck, combinedCg };
     })();
 
-    // --- Top View Calculations (Top is Rear, Bottom is Front) ---
+    // --- Top View Calculations ---
     const tv = (() => {
         const centerX = topViewOrigin.x + screenWidth / 2;
-        const standY = topViewOrigin.y; // Rear edge of the stand
+        const standY = topViewOrigin.y;
 
-        // Correct Logic based on new understanding:
-        // Position the base relative to the front edges.
         const standFrontY = standY + standDepth;
         const baseFrontY = standFrontY + standFrontOffset;
         const baseY = baseFrontY - baseDepth;
 
         const base = { x: centerX - baseWidth / 2, y: baseY, width: baseWidth, height: baseDepth };
-        
-        // Correct stacking logic: From top to bottom (increasing Y)
         const stand = { x: centerX - standWidth / 2, y: standY, width: standWidth, height: standDepth };
         const vesaNeck = { x: centerX - vesaNeckWidth / 2, y: stand.y + stand.height, width: vesaNeckWidth, height: vesaNeckDepth };
         const backpack = { x: centerX - backpackWidth / 2, y: vesaNeck.y + vesaNeck.height, width: backpackWidth, height: backpackThickness };
         const panel = { x: topViewOrigin.x, y: backpack.y + backpack.height, width: screenWidth, height: panelThickness };
 
-        const top = Math.min(base.y, stand.y);
-        const bottom = Math.max(base.y + base.height, panel.y + panel.height);
-        const centerY = top + (bottom - top) / 2;
-        
         const pivot = { x: centerX, y: stand.y + stand.height / 2 };
         
-        // --- New Stability Calculation ---
+        // --- Stability Calculation with Dynamic Swivel Angle ---
         const standCenterX_SideView = sv.stand.x + sv.stand.width / 2;
         const y_A = pivot.y - (sv.pointA.x - standCenterX_SideView);
         const y_B = pivot.y - (sv.pointB.x - standCenterX_SideView);
@@ -205,27 +192,32 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
         const P = pivot;
         const C = { cx: P.x, cy: circleCenterY };
         const r = circleRadius;
-        const angleRad45 = 45 * (Math.PI / 180);
+        
+        // Use dynamic swivel angle for stability check
+        const angleRadSwivel = Math.abs(swivelAngle) * (Math.PI / 180);
 
         const getRotatedCenter = (angleRad: number) => {
             const sinA = Math.sin(angleRad);
             const cosA = Math.cos(angleRad);
+            // Rotates point C around point P
             const cx_rotated = P.x + (C.cx - P.x) * cosA - (C.cy - P.y) * sinA;
             const cy_rotated = P.y + (C.cx - P.x) * sinA + (C.cy - P.y) * cosA;
             return { cx: cx_rotated, cy: cy_rotated };
         };
 
         const center0 = C;
-        const centerPlus45 = getRotatedCenter(angleRad45);
-        const centerMinus45 = getRotatedCenter(-angleRad45);
+        const centerPlusSwivel = getRotatedCenter(angleRadSwivel);
+        const centerMinusSwivel = getRotatedCenter(-angleRadSwivel);
 
+        // A screen is considered stable if the projection circle is fully within the base 
+        // at neutral, positive swivel, and negative swivel positions.
         const isStable = 
             isCircleInRect({ ...center0, r }, base) &&
-            isCircleInRect({ ...centerPlus45, r }, base) &&
-            isCircleInRect({ ...centerMinus45, r }, base);
+            isCircleInRect({ ...centerPlusSwivel, r }, base) &&
+            isCircleInRect({ ...centerMinusSwivel, r }, base);
 
         return {
-            origin: topViewOrigin, centerX, centerY, base, stand, panel, backpack, vesaNeck,
+            origin: topViewOrigin, centerX, base, stand, panel, backpack, vesaNeck,
             isStable,
             pivot
         };
@@ -243,10 +235,7 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
     const maxX = Math.max(...allElements.map(el => el.x + el.width)) + outerPadding;
     const maxY = Math.max(...allElements.map(el => el.y + el.height)) + outerPadding;
 
-    const width = maxX - minX;
-    const height = maxY - minY;
-
-    const viewBox = `${minX} ${minY} ${width} ${height}`;
+    const viewBox = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
 
     return {
       sideView: sv,
