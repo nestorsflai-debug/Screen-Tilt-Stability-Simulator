@@ -1,0 +1,5 @@
+{
+  "name": "Screen Tilt Stability Simulator",
+  "description": "An interactive simulator to visualize and calculate the stability of a screen based on its dimensions, tilt, and swivel angles. Users can edit dimensions directly on the SVG diagrams to see real-time updates.",
+  "requestFramePermissions": []
+}
