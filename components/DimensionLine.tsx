@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
 interface DimensionLineProps {
@@ -9,6 +10,7 @@ interface DimensionLineProps {
   value: number;
   onValueChange?: (value: number) => void;
   offset?: number;
+  onOffsetChange?: (newOffset: number) => void;
   horizontal?: boolean;
   unit?: string;
   viewScale: number;
@@ -16,15 +18,16 @@ interface DimensionLineProps {
 }
 
 const DimensionLine: React.FC<DimensionLineProps> = ({
-  x1, y1, x2, y2, label, value, onValueChange, offset = 20, horizontal = false, unit = '', viewScale, lineColor = '#333'
+  x1, y1, x2, y2, label, value, onValueChange, onOffsetChange, offset = 20, horizontal = false, unit = '', viewScale, lineColor = '#333'
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [inputValue, setInputValue] = useState(value.toString());
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [dragOffset, setDragOffset] = useState(0);
+  // localDragOffset allows for smooth dragging visualization without flooding history
+  const [localDragOffset, setLocalDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0, initialOffset: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0, initialOffset: offset });
 
   const isEditable = !!onValueChange;
 
@@ -41,7 +44,6 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
   
   const handleLabelClick = (e: React.MouseEvent) => {
       if (!isEditable) return;
-      // Prevent drag from starting when we want to edit
       e.stopPropagation();
       if (!isEditing) {
           setIsEditing(true);
@@ -67,17 +69,17 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
   };
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Only start drag if not in edit mode and editable
-    if (!isEditable || isEditing) return;
+    if (isEditing) return;
     e.stopPropagation();
     setIsDragging(true);
+    setLocalDragOffset(0);
     dragStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      initialOffset: dragOffset,
+      initialOffset: offset,
     };
     document.body.style.cursor = 'grabbing';
-  }, [isEditing, dragOffset, isEditable]);
+  }, [isEditing, offset]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -85,12 +87,18 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
       const dx = (e.clientX - dragStartRef.current.x) / viewScale;
       const dy = (e.clientY - dragStartRef.current.y) / viewScale;
       const delta = horizontal ? dy : dx;
-      setDragOffset(dragStartRef.current.initialOffset + delta);
+      setLocalDragOffset(delta);
     };
 
     const handleMouseUp = () => {
-      setIsDragging(false);
-      document.body.style.cursor = 'default';
+      if (isDragging) {
+        if (onOffsetChange && Math.abs(localDragOffset) > 0.1) {
+          onOffsetChange(dragStartRef.current.initialOffset + localDragOffset);
+        }
+        setIsDragging(false);
+        setLocalDragOffset(0);
+        document.body.style.cursor = 'default';
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -99,14 +107,14 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, viewScale]);
+  }, [isDragging, viewScale, localDragOffset, onOffsetChange]);
 
-  const totalOffset = offset + dragOffset;
+  const currentOffset = offset + localDragOffset;
   const lineProps = {
-    x1: horizontal ? x1 : x1 + totalOffset,
-    y1: horizontal ? y1 + totalOffset : y1,
-    x2: horizontal ? x2 : x2 + totalOffset,
-    y2: horizontal ? y2 + totalOffset : y2,
+    x1: horizontal ? x1 : x1 + currentOffset,
+    y1: horizontal ? y1 + currentOffset : y1,
+    x2: horizontal ? x2 : x2 + currentOffset,
+    y2: horizontal ? y2 + currentOffset : y2,
   };
 
   const textX = (lineProps.x1 + lineProps.x2) / 2;
@@ -120,12 +128,9 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
 
   return (
     <g>
-        {/* Main dimension line */}
       <line {...lineProps} stroke={lineColor} strokeWidth="0.5" />
-      {/* Witness lines */}
       <line x1={x1} y1={y1} x2={lineProps.x1} y2={lineProps.y1} stroke={lineColor} strokeWidth="0.5" strokeDasharray="2 1" />
       <line x1={x2} y1={y2} x2={lineProps.x2} y2={lineProps.y2} stroke={lineColor} strokeWidth="0.5" strokeDasharray="2 1" />
-      {/* Ticks */}
       <line x1={lineProps.x1} y1={lineProps.y1 - (horizontal ? 0:3)} x2={lineProps.x1} y2={lineProps.y1 + (horizontal ? 0:3)} stroke={lineColor} strokeWidth="0.5" />
       <line x1={lineProps.x1 - (horizontal ? 3:0)} y1={lineProps.y1} x2={lineProps.x1 + (horizontal ? 3:0)} y2={lineProps.y1} stroke={lineColor} strokeWidth="0.5" />
       <line x1={lineProps.x2} y1={lineProps.y2 - (horizontal ? 0:3)} x2={lineProps.x2} y2={lineProps.y2 + (horizontal ? 0:3)} stroke={lineColor} strokeWidth="0.5" />
@@ -134,11 +139,10 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
        <g 
         onMouseDown={handleMouseDown}
         onClick={handleLabelClick}
-        className={isEditable ? "cursor-grab" : "cursor-default"}
+        className="cursor-grab"
       >
-        {/* Transparent background for easier grabbing */}
          <rect x={textX - 40} y={textY - 10} width={80} height={20} fill="transparent" />
-        {!isEditing || !isEditable ? (
+        {!isEditing ? (
             <text
             x={textX}
             y={textY}
@@ -153,8 +157,8 @@ const DimensionLine: React.FC<DimensionLineProps> = ({
         ) : (
             <foreignObject x={foreignObjectPos.x} y={foreignObjectPos.y} width={foreignObjectSize} height={30}>
             {
+                /* Fix: removed invalid xmlns attribute from div inside foreignObject */
                 React.createElement('div', {
-                xmlns: "http://www.w3.org/1999/xhtml",
                 className: "w-full h-full flex justify-center items-center"
                 },
                 <input

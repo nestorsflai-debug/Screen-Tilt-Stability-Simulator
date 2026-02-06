@@ -1,3 +1,4 @@
+
 import { useMemo } from 'react';
 import { ScreenDimensions, Point, Rect } from '../types';
 
@@ -6,8 +7,6 @@ const calculateIntersection = (pivot: Point, angleDeg: number, floorY: number): 
   
   const angleRad = angleDeg * (Math.PI / 180);
   const deltaY = floorY - pivot.y;
-  // Corrected tangent calculation for SVG coordinate system.
-  // angle=0 is vertical down, positive angle tilts right.
   const deltaX = deltaY * Math.tan(angleRad);
 
   return { x: pivot.x + deltaX, y: floorY };
@@ -20,50 +19,83 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       screenWidth, panelHeight, backpackHeight, backpackWidth,
       panelThickness, backpackThickness,
       vesaNeckHeight, vesaNeckDepth, vesaNeckWidth,
-      standHeight, standToNeckGap, standWidth, standDepth, standFrontOffset,
+      standHeight, standToNeckGap, liftingOffset, standWidth, standDepth, standFrontOffset,
       baseWidth, baseDepth, baseHeight,
       tiltForwardAngle, tiltBackwardAngle,
-      swivelAngle,
+      swivelAngle, swivelPivotOffset,
+      standBaseAngle,
     } = dims;
 
     const totalScreenThickness = panelThickness + backpackThickness;
 
     // --- Layout Positions ---
-    const viewGap = 250;
+    const horizontalViewGap = 250; 
+    const verticalViewGap = 0;     // 從 50mm 縮短 50mm 變為 0mm
     const topPadding = 150;
     const outerPadding = 100;
     
     const panelAssemblyHeight = Math.max(panelHeight, backpackHeight);
-    const totalAssemblyHeight = baseHeight + standHeight + standToNeckGap - (vesaNeckHeight / 2) + (panelAssemblyHeight / 2);
-    const maxViewHeight = totalAssemblyHeight;
+    
+    // 固定支架投影高度計算
+    const standAngleRad = standBaseAngle * (Math.PI / 180);
+    const standTopXOffset = standHeight * Math.cos(standAngleRad);
+    const standTopYOffset = -standHeight * Math.sin(standAngleRad);
 
+    const sideViewWidthForLayout = 800; 
+    const topViewDrawingHeight = Math.max(baseDepth, standDepth + vesaNeckDepth + totalScreenThickness + 200);
 
-    const totalAssemblyDepth = Math.max(baseDepth, standDepth + vesaNeckDepth + totalScreenThickness);
-    const sideViewWidth = standDepth + vesaNeckDepth + totalScreenThickness;
-    const topViewDrawingHeight = Math.max(baseDepth, standDepth + vesaNeckDepth + totalScreenThickness);
-
-    const topViewOrigin = { x: 0 + sideViewWidth + viewGap, y: topPadding };
-    const floorY = topViewOrigin.y + topViewDrawingHeight + viewGap + maxViewHeight;
+    const topViewOrigin = { x: sideViewWidthForLayout + horizontalViewGap, y: topPadding };
+    
+    const staticAssemblyHeight = baseHeight + standHeight + (panelAssemblyHeight); 
+    const floorY = topViewOrigin.y + topViewDrawingHeight + verticalViewGap + staticAssemblyHeight;
+    
     const sideViewOrigin = { x: 0, y: floorY };
-    const frontViewOrigin = { x: 0 + sideViewWidth + viewGap, y: floorY };
+    const frontViewOrigin = { x: sideViewWidthForLayout + horizontalViewGap, y: floorY };
 
 
-    // --- Side View Calculations (Left is Front, Right is Rear) ---
+    // --- Side View Calculations ---
     const sv = (() => {
-      // Assemble from rear to front (right to left)
-      const standRearX = sideViewOrigin.x + sideViewWidth;
-      const standFrontX = standRearX - standDepth;
+      const standRearBottomX = sideViewOrigin.x + 600; 
+      const standFrontBottomX = standRearBottomX - standDepth;
       
-      const baseFrontX = standFrontX - standFrontOffset;
+      const baseFrontX = standFrontBottomX - standFrontOffset;
+      const baseRect = { x: baseFrontX, y: floorY - baseHeight, width: baseDepth, height: baseHeight };
       
-      const base = { x: baseFrontX, y: floorY - baseHeight, width: baseDepth, height: baseHeight };
-      const stand = { x: standFrontX, y: base.y - standHeight, width: standDepth, height: standHeight };
+      const p1 = { x: standFrontBottomX, y: baseRect.y };
+      const p2 = { x: standRearBottomX, y: baseRect.y };
+      const p3 = { x: p2.x + standTopXOffset, y: baseRect.y + standTopYOffset };
+      const p4 = { x: p1.x + standTopXOffset, y: baseRect.y + standTopYOffset };
+      const standPolyPoints = [p1, p2, p3, p4];
+
+      // 修正後的 Lifting：0 是最高點，增加數值代表向下移動
+      // totalPhysicalGap 定義為「支架頂端到頸部頂端」的垂直距離
+      const totalPhysicalGap = standToNeckGap - (liftingOffset || 0);
+
+      // Neck alignment
+      const neckTopY = p4.y - totalPhysicalGap;
+      const neckBottomY = neckTopY + vesaNeckHeight;
       
-      const vesaNeck = { x: stand.x - vesaNeckDepth, y: stand.y - standToNeckGap, width: vesaNeckDepth, height: vesaNeckHeight };
+      const dx_dy = (p4.x - p1.x) / (p4.y - p1.y);
+
+      const tr = { x: p4.x + (neckTopY - p4.y) * dx_dy, y: neckTopY }; 
+      const br = { x: p4.x + (neckBottomY - p4.y) * dx_dy, y: neckBottomY }; 
       
-      const neckCenterY = vesaNeck.y + vesaNeck.height / 2;
+      const tl_x = tr.x - vesaNeckDepth;
+      const tl = { x: tl_x, y: neckTopY }; 
+      const bl = { x: tl_x, y: neckBottomY }; 
+      const neckPolyPoints = [tl, tr, br, bl];
+
+      const vesaNeck = { 
+          x: tl.x, 
+          y: neckTopY, 
+          width: vesaNeckDepth, 
+          height: vesaNeckHeight,
+          polyPoints: neckPolyPoints
+      };
+      
+      const neckCenterY = neckTopY + vesaNeckHeight / 2;
       const backpackY = neckCenterY - backpackHeight / 2;
-      const backpack = { x: vesaNeck.x - backpackThickness, y: backpackY, width: backpackThickness, height: backpackHeight };
+      const backpack = { x: tl.x - backpackThickness, y: backpackY, width: backpackThickness, height: backpackHeight };
       
       const panelY = backpack.y + (backpackHeight / 2) - (panelHeight / 2);
       const panel = { x: backpack.x - panelThickness, y: panelY, width: panelThickness, height: panelHeight };
@@ -81,102 +113,82 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       const pointA = calculateIntersection(pivot, -tiltBackwardAngle, floorY);
       const pointB = calculateIntersection(pivot, tiltForwardAngle, floorY);
       
-      const components = [
-        { rect: panel, width3d: screenWidth },
-        { rect: backpack, width3d: backpackWidth },
-        { rect: vesaNeck, width3d: vesaNeckWidth },
-        { rect: stand, width3d: standWidth },
-        { rect: base, width3d: baseWidth }
-      ];
-
-      let totalVolume = 0;
-      let weightedCgX = 0;
-      let weightedCgY = 0;
-
-      components.forEach(({ rect, width3d }) => {
-        const volume = rect.width * rect.height * width3d;
-        const cgX = rect.x + rect.width / 2;
-        const cgY = rect.y + rect.height / 2;
-        
-        totalVolume += volume;
-        weightedCgX += cgX * volume;
-        weightedCgY += cgY * volume;
-      });
-
-      const combinedCg = {
-        x: totalVolume > 0 ? weightedCgX / totalVolume : 0,
-        y: totalVolume > 0 ? weightedCgY / totalVolume : 0,
+      const standBoundingRect = {
+          x: Math.min(p1.x, p4.x),
+          y: p4.y,
+          width: standDepth,
+          height: Math.abs(standTopYOffset)
       };
+
+      const sVolume = standWidth * standDepth * standHeight;
+      const sCgX = (p1.x + p2.x + p3.x + p4.x) / 4;
+      const sCgY = (p1.y + p3.y) / 2;
 
       return {
-        origin: sideViewOrigin, floorY, base, stand, screen, panel, backpack, vesaNeck,
+        origin: sideViewOrigin, floorY, base: baseRect, stand: standBoundingRect, standPolyPoints, screen, panel, backpack, vesaNeck,
         pivot, thicknessLine1, thicknessLine2, pointA, pointB,
-        combinedCg
+        standFrontBottomX, standRearBottomX, sCgX, sCgY, sVolume, totalPhysicalGap
       };
     })();
-
 
     // --- Front View Calculations ---
     const fv = (() => {
         const centerX = frontViewOrigin.x + screenWidth/2;
-        const base = {x: centerX - baseWidth/2, y: sv.base.y, width: baseWidth, height: baseHeight};
-        const stand = {x: centerX - standWidth/2, y: sv.stand.y, width: standWidth, height: standHeight};
+        const baseRect = {x: centerX - baseWidth/2, y: sv.base.y, width: baseWidth, height: baseHeight};
+        const standH = Math.abs(standTopYOffset);
+        // 支架頂端位置應等於 頸部頂端位置 + 與頸部的差距
+        const standTopY = sv.vesaNeck.y + sv.totalPhysicalGap;
+        const stand = {x: centerX - standWidth/2, y: standTopY, width: standWidth, height: floorY - standTopY - baseHeight};
         const vesaNeck = { x: centerX - vesaNeckWidth / 2, y: sv.vesaNeck.y, width: vesaNeckWidth, height: vesaNeckHeight };
         const backpack = { x: centerX - backpackWidth/2, y: sv.backpack.y, width: backpackWidth, height: backpackHeight };
         const panel = {x: frontViewOrigin.x, y: sv.panel.y, width: screenWidth, height: panelHeight};
 
-         const components = [
-            { rect: panel, depth3d: panelThickness },
-            { rect: backpack, depth3d: backpackThickness },
-            { rect: vesaNeck, depth3d: vesaNeckDepth },
-            { rect: stand, depth3d: standDepth },
-            { rect: base, depth3d: baseDepth }
-        ];
-
-        let totalVolume = 0;
-        let weightedCgX = 0;
-        let weightedCgY = 0;
-
-        components.forEach(({ rect, depth3d }) => {
-            const volume = rect.width * rect.height * depth3d;
-            const cgX = rect.x + rect.width / 2;
-            const cgY = rect.y + rect.height / 2;
-            
-            totalVolume += volume;
-            weightedCgX += cgX * volume;
-            weightedCgY += cgY * volume;
-        });
-
-        const combinedCg = {
-            x: totalVolume > 0 ? weightedCgX / totalVolume : 0,
-            y: totalVolume > 0 ? weightedCgY / totalVolume : 0,
-        };
-
-        return { origin: frontViewOrigin, floorY, centerX, base, stand, panel, backpack, vesaNeck, combinedCg };
+        return { origin: frontViewOrigin, floorY, centerX, base: baseRect, stand, panel, backpack, vesaNeck };
     })();
 
     // --- Top View Calculations ---
     const tv = (() => {
         const centerX = topViewOrigin.x + screenWidth / 2;
-        const standY = topViewOrigin.y;
+        const refY = topViewOrigin.y + 100;
 
-        const standFrontY = standY + standDepth;
-        const baseFrontY = standFrontY + standFrontOffset;
+        const mapXtoY = (sideX: number) => refY + (sv.standFrontBottomX - sideX);
+
+        const standFrontBottomY = mapXtoY(sv.standPolyPoints[0].x);
+        const standRearBottomY = mapXtoY(sv.standPolyPoints[1].x);
+        const standFrontTopY = mapXtoY(sv.standPolyPoints[3].x);
+        const standRearTopY = mapXtoY(sv.standPolyPoints[2].x);
+
+        const baseFrontY = standFrontBottomY + standFrontOffset;
         const baseY = baseFrontY - baseDepth;
 
-        const base = { x: centerX - baseWidth / 2, y: baseY, width: baseWidth, height: baseDepth };
-        const stand = { x: centerX - standWidth / 2, y: standY, width: standWidth, height: standDepth };
-        const vesaNeck = { x: centerX - vesaNeckWidth / 2, y: stand.y + stand.height, width: vesaNeckWidth, height: vesaNeckDepth };
-        const backpack = { x: centerX - backpackWidth / 2, y: vesaNeck.y + vesaNeck.height, width: backpackWidth, height: backpackThickness };
-        const panel = { x: topViewOrigin.x, y: backpack.y + backpack.height, width: screenWidth, height: panelThickness };
-
-        const pivot = { x: centerX, y: stand.y + stand.height / 2 };
+        const baseRect = { x: centerX - baseWidth / 2, y: baseY, width: baseWidth, height: baseDepth };
         
-        // --- Stability Calculation with Dynamic Swivel Angle ---
-        const standCenterX_SideView = sv.stand.x + sv.stand.width / 2;
-        const y_A = pivot.y - (sv.pointA.x - standCenterX_SideView);
-        const y_B = pivot.y - (sv.pointB.x - standCenterX_SideView);
+        const standBottomRect = { 
+            x: centerX - standWidth / 2, 
+            y: Math.min(standFrontBottomY, standRearBottomY), 
+            width: standWidth, 
+            height: Math.abs(standFrontBottomY - standRearBottomY) 
+        };
+        const standTopRect = { 
+            x: centerX - standWidth / 2, 
+            y: Math.min(standFrontTopY, standRearTopY), 
+            width: standWidth, 
+            height: Math.abs(standFrontTopY - standRearTopY) 
+        };
 
+        const leftX = centerX - standWidth / 2;
+        const rightX = centerX + standWidth / 2;
+        const standBodyPoints = [
+            { x: leftX, y: Math.min(standFrontBottomY, standRearBottomY, standFrontTopY, standRearTopY) },
+            { x: rightX, y: Math.min(standFrontBottomY, standRearBottomY, standFrontTopY, standRearTopY) },
+            { x: rightX, y: Math.max(standFrontBottomY, standRearBottomY, standFrontTopY, standRearTopY) },
+            { x: leftX, y: Math.max(standFrontBottomY, standRearBottomY, standFrontTopY, standRearTopY) }
+        ];
+
+        const pivot = { x: centerX, y: standRearBottomY + swivelPivotOffset };
+        
+        const y_A = pivot.y - (sv.pointA.x - sv.standFrontBottomX - standDepth/2);
+        const y_B = pivot.y - (sv.pointB.x - sv.standFrontBottomX - standDepth/2);
         const circleRadius = Math.abs(y_A - y_B) / 2;
         const circleCenterY = (y_A + y_B) / 2;
 
@@ -188,62 +200,71 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
                 rect.y + rect.height >= circle.cy + circle.r
             );
         };
-
-        const P = pivot;
-        const C = { cx: P.x, cy: circleCenterY };
-        const r = circleRadius;
-        
-        // Use dynamic swivel angle for stability check
         const angleRadSwivel = Math.abs(swivelAngle) * (Math.PI / 180);
-
         const getRotatedCenter = (angleRad: number) => {
             const sinA = Math.sin(angleRad);
             const cosA = Math.cos(angleRad);
-            // Rotates point C around point P
-            const cx_rotated = P.x + (C.cx - P.x) * cosA - (C.cy - P.y) * sinA;
-            const cy_rotated = P.y + (C.cx - P.x) * sinA + (C.cy - P.y) * cosA;
+            const cx_rotated = pivot.x + (pivot.x - pivot.x) * cosA - (circleCenterY - pivot.y) * sinA;
+            const cy_rotated = pivot.y + (pivot.x - pivot.x) * sinA + (circleCenterY - pivot.y) * cosA;
             return { cx: cx_rotated, cy: cy_rotated };
         };
+        const isStable = isCircleInRect({ cx: pivot.x, cy: circleCenterY, r: circleRadius }, baseRect) &&
+                          isCircleInRect({ ...getRotatedCenter(angleRadSwivel), r: circleRadius }, baseRect) &&
+                          isCircleInRect({ ...getRotatedCenter(-angleRadSwivel), r: circleRadius }, baseRect);
 
-        const center0 = C;
-        const centerPlusSwivel = getRotatedCenter(angleRadSwivel);
-        const centerMinusSwivel = getRotatedCenter(-angleRadSwivel);
-
-        // A screen is considered stable if the projection circle is fully within the base 
-        // at neutral, positive swivel, and negative swivel positions.
-        const isStable = 
-            isCircleInRect({ ...center0, r }, base) &&
-            isCircleInRect({ ...centerPlusSwivel, r }, base) &&
-            isCircleInRect({ ...centerMinusSwivel, r }, base);
+        const vesaNeckRearX = sv.vesaNeck.polyPoints[1].x; 
+        const vesaNeckBackY = mapXtoY(vesaNeckRearX);
+        const vesaNeckRect = { x: centerX - vesaNeckWidth / 2, y: vesaNeckBackY, width: vesaNeckWidth, height: vesaNeckDepth };
+        
+        const backpackRearX = sv.backpack.x + sv.backpack.width;
+        const backpackBackY = mapXtoY(backpackRearX);
+        const backpackRect = { x: centerX - backpackWidth / 2, y: backpackBackY, width: backpackWidth, height: backpackThickness };
+        
+        const panelRearX = sv.panel.x + sv.panel.width;
+        const panelBackY = mapXtoY(panelRearX);
+        const panelRect = { x: topViewOrigin.x, y: panelBackY, width: screenWidth, height: panelThickness };
 
         return {
-            origin: topViewOrigin, centerX, base, stand, panel, backpack, vesaNeck,
-            isStable,
-            pivot
+            origin: topViewOrigin, centerX, base: baseRect, 
+            standBottom: standBottomRect, standTop: standTopRect, standBodyPoints,
+            panel: panelRect, backpack: backpackRect, vesaNeck: vesaNeckRect,
+            isStable, pivot, y_A, y_B
         };
     })();
     
-    // --- ViewBox Calculation ---
-    const allElements = [
-        fv.base, fv.stand, fv.panel, fv.backpack, fv.vesaNeck,
-        sv.base, sv.stand, sv.panel, sv.backpack, sv.vesaNeck, {x: sv.pointA.x, y: sv.floorY, width: 0, height: 0}, {x: sv.pointB.x, y: sv.floorY, width: 0, height: 0},
-        tv.base, tv.stand, tv.panel, tv.backpack, tv.vesaNeck
-    ];
+    const combinedCg = (() => {
+        const components = [
+            { rect: sv.panel, width3d: screenWidth },
+            { rect: sv.backpack, width3d: backpackWidth },
+            { rect: sv.vesaNeck, width3d: vesaNeckWidth },
+            { rect: sv.base, width3d: baseWidth }
+        ];
+        let totalVol = sv.sVolume;
+        let wX = sv.sCgX * sv.sVolume;
+        let wY = sv.sCgY * sv.sVolume;
+        components.forEach(({ rect, width3d }) => {
+            const vol = rect.width * rect.height * width3d;
+            totalVol += vol;
+            wX += (rect.x + rect.width / 2) * vol;
+            wY += (rect.y + rect.height / 2) * vol;
+        });
+        return { x: wX / totalVol, y: wY / totalVol };
+    })();
 
-    const minX = Math.min(...allElements.map(el => el.x)) - outerPadding;
-    const minY = Math.min(...allElements.map(el => el.y)) - outerPadding;
-    const maxX = Math.max(...allElements.map(el => el.x + el.width)) + outerPadding;
-    const maxY = Math.max(...allElements.map(el => el.y + el.height)) + outerPadding;
-
-    const viewBox = `${minX} ${minY} ${maxX - minX} ${maxY - minY}`;
+    const padding = outerPadding;
+    const minX = Math.min(sv.base.x, fv.base.x, tv.base.x) - padding;
+    const maxX = Math.max(sv.base.x + sv.base.width, fv.base.x + fv.base.width, tv.base.x + tv.base.width) + padding + 300; 
+    
+    const topY = topPadding - padding;
+    const bottomY = floorY + padding + 150; 
 
     return {
-      sideView: sv,
-      frontView: fv,
+      sideView: { ...sv, combinedCg },
+      frontView: { ...fv, combinedCg: { x: fv.centerX, y: combinedCg.y } },
       topView: tv,
-      sideViewPoints: { A: sv.pointA, B: sv.pointB, standCenterX: sv.stand.x + sv.stand.width / 2 },
+      sideViewPoints: { A: sv.pointA, B: sv.pointB, standCenterX: (sv.standPolyPoints[0].x + sv.standPolyPoints[1].x) / 2 },
       isStable: tv.isStable,
-      viewBox,
+      viewBox: `${minX} ${topY} ${maxX - minX} ${bottomY - topY}`,
     };
   }, [dims]);
 };

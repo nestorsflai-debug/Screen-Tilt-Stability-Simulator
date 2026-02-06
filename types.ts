@@ -11,6 +11,7 @@ export interface ScreenDimensions {
   vesaNeckWidth: number;
   standHeight: number;
   standToNeckGap: number;
+  liftingOffset: number; // 新增：相對於初始 Gap 的位移量
   standWidth: number;
   standDepth: number;
   standFrontOffset: number; // Distance from front of stand to front of base
@@ -20,6 +21,9 @@ export interface ScreenDimensions {
   tiltForwardAngle: number;
   tiltBackwardAngle: number;
   swivelAngle: number;
+  swivelPivotOffset: number; // Distance from rear edge of stand to swivel center
+  standBaseAngle: number; // Angle between the base and the stand column (90 is vertical)
+  labelOffsets: Record<string, number>;
 }
 
 export interface Point {
