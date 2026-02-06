@@ -32,7 +32,7 @@ const ArrowDefs = () => (
 const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionChange, onOffsetChange, viewScale, isStable }) => {
     const { 
         base, standPolyPoints, panel, backpack, vesaNeck, pivot, thicknessLine1, thicknessLine2, pointA, pointB, floorY,
-        screen, combinedCg
+        screen, combinedCg, maxLiftingOffset
     } = geometry;
 
     // --- State & Refs for interactions ---
@@ -88,8 +88,11 @@ const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionCh
     }
     const handleLiftingSubmit = () => {
         const numericValue = parseFloat(liftingInputValue);
-        // 限制輸入數值不能小於 0
-        if (!isNaN(numericValue)) onDimensionChange('liftingOffset', Math.max(0, numericValue));
+        // 限制輸入數值不能小於 0 且不能超過 maxLiftingOffset
+        if (!isNaN(numericValue)) {
+            const clamped = Math.max(0, Math.min(maxLiftingOffset, numericValue));
+            onDimensionChange('liftingOffset', clamped);
+        }
         setIsEditingLifting(false);
     }
 
@@ -130,8 +133,14 @@ const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionCh
     useEffect(() => {
         const handleMouseMove = (e: MouseEvent) => {
             if (isDraggingAssembly) {
+                // dy 正值代表滑鼠向上移，負值代表滑鼠向下移
                 const dy = (assemblyDragStartRef.current.clientY - e.clientY) / viewScale;
-                const newOffset = Math.max(0, assemblyDragStartRef.current.initialOffset - dy);
+                
+                // 使用者要求：
+                // 1. 往上拖曳歸 0 時停止
+                // 2. 往下拖曳碰到 base 時停止 (位移量達到 maxLiftingOffset)
+                const newOffsetUnclamped = assemblyDragStartRef.current.initialOffset - dy;
+                const newOffset = Math.max(0, Math.min(maxLiftingOffset, newOffsetUnclamped));
                 onDimensionChange('liftingOffset', newOffset);
             }
             if (isDraggingForward) {
@@ -163,7 +172,7 @@ const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionCh
             window.removeEventListener('mousemove', handleMouseMove);
             window.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDraggingAssembly, isDraggingForward, isDraggingBackward, viewScale, dimensions.tiltForwardAngle, dimensions.tiltBackwardAngle, onDimensionChange]);
+    }, [isDraggingAssembly, isDraggingForward, isDraggingBackward, viewScale, dimensions.tiltForwardAngle, dimensions.tiltBackwardAngle, onDimensionChange, maxLiftingOffset]);
 
     const commonProps = { stroke: "#1A202C", strokeWidth: 0.2, fillOpacity: 0.8 };
     const baseFillColor = isStable ? "#4A5568" : "#7f1d1d";

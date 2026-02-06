@@ -30,7 +30,7 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
 
     // --- Layout Positions ---
     const horizontalViewGap = 250; 
-    const verticalViewGap = 0;     // 從 50mm 縮短 50mm 變為 0mm
+    const verticalViewGap = 0;     
     const topPadding = 150;
     const outerPadding = 100;
     
@@ -67,9 +67,15 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       const p4 = { x: p1.x + standTopXOffset, y: baseRect.y + standTopYOffset };
       const standPolyPoints = [p1, p2, p3, p4];
 
+      // 計算最大 Lifting 限制：panel 底部不能低於 base 頂部 (baseRect.y)
+      // panelY = (p4.y - standToNeckGap + liftingOffset + vesaNeckHeight / 2) - panelHeight / 2
+      // panelY + panelHeight = baseRect.y
+      // (p4.y - standToNeckGap + liftingOffset + vesaNeckHeight / 2) + panelHeight / 2 = baseRect.y
+      const maxLiftingOffset = baseRect.y - p4.y + standToNeckGap - (vesaNeckHeight / 2) - (panelHeight / 2);
+
       // 修正後的 Lifting：0 是最高點，增加數值代表向下移動
-      // totalPhysicalGap 定義為「支架頂端到頸部頂端」的垂直距離
-      const totalPhysicalGap = standToNeckGap - (liftingOffset || 0);
+      const clampedLifting = Math.max(0, Math.min(maxLiftingOffset, liftingOffset || 0));
+      const totalPhysicalGap = standToNeckGap - clampedLifting;
 
       // Neck alignment
       const neckTopY = p4.y - totalPhysicalGap;
@@ -97,7 +103,7 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       const backpackY = neckCenterY - backpackHeight / 2;
       const backpack = { x: tl.x - backpackThickness, y: backpackY, width: backpackThickness, height: backpackHeight };
       
-      const panelY = backpack.y + (backpackHeight / 2) - (panelHeight / 2);
+      const panelY = neckCenterY - panelHeight / 2;
       const panel = { x: backpack.x - panelThickness, y: panelY, width: panelThickness, height: panelHeight };
       
       const screen = { x: panel.x, y: Math.min(panel.y, backpack.y), width: totalScreenThickness, height: Math.max(panel.y + panel.height, backpack.y + backpack.height) - Math.min(panel.y, backpack.y) };
@@ -127,7 +133,7 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       return {
         origin: sideViewOrigin, floorY, base: baseRect, stand: standBoundingRect, standPolyPoints, screen, panel, backpack, vesaNeck,
         pivot, thicknessLine1, thicknessLine2, pointA, pointB,
-        standFrontBottomX, standRearBottomX, sCgX, sCgY, sVolume, totalPhysicalGap
+        standFrontBottomX, standRearBottomX, sCgX, sCgY, sVolume, totalPhysicalGap, maxLiftingOffset
       };
     })();
 
@@ -135,8 +141,6 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
     const fv = (() => {
         const centerX = frontViewOrigin.x + screenWidth/2;
         const baseRect = {x: centerX - baseWidth/2, y: sv.base.y, width: baseWidth, height: baseHeight};
-        const standH = Math.abs(standTopYOffset);
-        // 支架頂端位置應等於 頸部頂端位置 + 與頸部的差距
         const standTopY = sv.vesaNeck.y + sv.totalPhysicalGap;
         const stand = {x: centerX - standWidth/2, y: standTopY, width: standWidth, height: floorY - standTopY - baseHeight};
         const vesaNeck = { x: centerX - vesaNeckWidth / 2, y: sv.vesaNeck.y, width: vesaNeckWidth, height: vesaNeckHeight };
