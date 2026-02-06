@@ -31,7 +31,7 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
     // --- Layout Positions ---
     const horizontalViewGap = 250; 
     const verticalViewGap = 0;     
-    const topPadding = 150;
+    const topPadding = 200;        // 增加 50mm (原為 150)
     const outerPadding = 100;
     
     const panelAssemblyHeight = Math.max(panelHeight, backpackHeight);
@@ -68,9 +68,7 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
       const standPolyPoints = [p1, p2, p3, p4];
 
       // 計算最大 Lifting 限制：panel 底部不能低於 base 頂部 (baseRect.y)
-      // panelY = (p4.y - standToNeckGap + liftingOffset + vesaNeckHeight / 2) - panelHeight / 2
-      // panelY + panelHeight = baseRect.y
-      // (p4.y - standToNeckGap + liftingOffset + vesaNeckHeight / 2) + panelHeight / 2 = baseRect.y
+      // panelY + panelHeight = baseRect.y -> 代表碰到
       const maxLiftingOffset = baseRect.y - p4.y + standToNeckGap - (vesaNeckHeight / 2) - (panelHeight / 2);
 
       // 修正後的 Lifting：0 是最高點，增加數值代表向下移動
@@ -259,7 +257,8 @@ export const useScreenGeometry = (dims: ScreenDimensions) => {
     const minX = Math.min(sv.base.x, fv.base.x, tv.base.x) - padding;
     const maxX = Math.max(sv.base.x + sv.base.width, fv.base.x + fv.base.width, tv.base.x + tv.base.width) + padding + 300; 
     
-    const topY = topPadding - padding;
+    // 調整 topY 使 Top View 距離邊界為 150mm (topPadding - topY = 200 - 50 = 150)
+    const topY = topPadding - 150; 
     const bottomY = floorY + padding + 150; 
 
     return {

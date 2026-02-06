@@ -88,7 +88,7 @@ const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionCh
     }
     const handleLiftingSubmit = () => {
         const numericValue = parseFloat(liftingInputValue);
-        // 限制輸入數值不能小於 0 且不能超過 maxLiftingOffset
+        // 限制輸入數值不能小於 0 且不能超過 maxLiftingOffset (觸碰底座)
         if (!isNaN(numericValue)) {
             const clamped = Math.max(0, Math.min(maxLiftingOffset, numericValue));
             onDimensionChange('liftingOffset', clamped);
@@ -136,9 +136,8 @@ const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionCh
                 // dy 正值代表滑鼠向上移，負值代表滑鼠向下移
                 const dy = (assemblyDragStartRef.current.clientY - e.clientY) / viewScale;
                 
-                // 使用者要求：
-                // 1. 往上拖曳歸 0 時停止
-                // 2. 往下拖曳碰到 base 時停止 (位移量達到 maxLiftingOffset)
+                // 向上拖曳 dy 為正 -> Offset 減少 -> 最小為 0
+                // 向下拖曳 dy 為負 -> Offset 增加 -> 最大為 maxLiftingOffset
                 const newOffsetUnclamped = assemblyDragStartRef.current.initialOffset - dy;
                 const newOffset = Math.max(0, Math.min(maxLiftingOffset, newOffsetUnclamped));
                 onDimensionChange('liftingOffset', newOffset);
@@ -335,7 +334,7 @@ const SideView: React.FC<SideViewProps> = ({ dimensions, geometry, onDimensionCh
           {/* Screen-specific Aux Lines */}
           <line x1={screen.x} y1={pivot.y} x2={screen.x + screen.width} y2={pivot.y} stroke="#666" strokeWidth="0.5" strokeDasharray="2 2" />
           
-          {/* 第一條分線延伸至 base (floorY) */}
+          {/* 第一條分線延伸至 floorY */}
           <line x1={thicknessLine1} y1={panel.y - 20} x2={thicknessLine1} y2={floorY} stroke="#666" strokeWidth="0.5" strokeDasharray="2 2" />
           
           <line x1={thicknessLine2} y1={panel.y - 20} x2={thicknessLine2} y2={panel.y + panel.height + 20} stroke="#666" strokeWidth="0.5" strokeDasharray="2 2" />

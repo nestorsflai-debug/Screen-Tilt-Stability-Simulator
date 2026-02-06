@@ -13,7 +13,8 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<ScreenDimensions[]>([initialDimensions]);
   const [historyIndex, setHistoryIndex] = useState(0);
   
-  const [viewTransform, setViewTransform] = useState({ scale: 1, tx: 0, ty: 0 });
+  // 將縮放從 1.3 縮小 1.15 倍，約為 1.13
+  const [viewTransform, setViewTransform] = useState({ scale: 1.13, tx: -130, ty: -80 });
   const svgRef = useRef<SVGSVGElement>(null);
   
   const isPanningRef = useRef(false);
@@ -163,7 +164,7 @@ const App: React.FC = () => {
   };
 
   const handleResetView = () => {
-      setViewTransform({ scale: 1, tx: 0, ty: 0 });
+      setViewTransform({ scale: 1.13, tx: -130, ty: -80 });
   };
   
   const [viewBoxMinX, viewBoxMinY, viewBoxWidth, viewBoxHeight] = 
